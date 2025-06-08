@@ -1,0 +1,9 @@
+anthropic>=0.8.0
+feedparser>=6.0.10
+python-dotenv>=1.0.0
+requests>=2.31.0
+schedule>=1.2.1
+slack-sdk>=3.27.0
+PyPDF2>=3.0.0
+python-magic>=0.4.27
+pytest>=8.0.0
