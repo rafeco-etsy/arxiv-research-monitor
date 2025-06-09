@@ -82,7 +82,7 @@ Potential Applications for Etsy
                 )
                 logger.info(f"Sent to Slack channel {channel}")
 
-            except SlackApiError as e:
+            except (SlackApiError, Exception) as e:
                 error_message = f"Failed to send to Slack channel {channel}: {str(e)}"
                 logger.error(error_message)
                 self.db.log_distribution(

@@ -1,7 +1,6 @@
 import os
 import logging
 import requests
-import PyPDF2
 from typing import Dict, Optional
 from pathlib import Path
 from anthropic import Anthropic
@@ -15,55 +14,14 @@ class PaperProcessor:
     def __init__(self, db: Database, claude_api_key: str):
         self.db = db
         self.anthropic = Anthropic(api_key=claude_api_key)
-        self.pdf_dir = Path("./data/pdfs")
-        self.pdf_dir.mkdir(parents=True, exist_ok=True)
 
-    def download_pdf(self, arxiv_id: str, url: str) -> Optional[str]:
-        """Download PDF from ArXiv."""
-        try:
-            # Convert abstract URL to PDF URL if necessary
-            pdf_url = url.replace('/abs/', '/pdf/') if '/abs/' in url else url
-            if not pdf_url.endswith('.pdf'):
-                pdf_url = f"{pdf_url}.pdf"
-
-            response = requests.get(pdf_url)
-            response.raise_for_status()
-
-            pdf_path = self.pdf_dir / f"{arxiv_id}.pdf"
-            with open(pdf_path, 'wb') as f:
-                f.write(response.content)
-
-            return str(pdf_path)
-
-        except Exception as e:
-            logger.error(f"Error downloading PDF for {arxiv_id}: {e}")
-            return None
-
-    def extract_text(self, pdf_path: str) -> Optional[str]:
-        """Extract text content from PDF."""
-        try:
-            text_content = []
-            with open(pdf_path, 'rb') as file:
-                reader = PyPDF2.PdfReader(file)
-                for page in reader.pages:
-                    text_content.append(page.extract_text())
-            
-            return '\n'.join(text_content)
-
-        except Exception as e:
-            logger.error(f"Error extracting text from {pdf_path}: {e}")
-            return None
-
-    def assess_relevance(self, paper_text: str, title: str, abstract: str) -> Dict:
+    def assess_relevance(self, title: str, abstract: str) -> Dict:
         """Use Claude to evaluate paper relevance and generate summary."""
         try:
             # Prepare context for Claude
             context = f"""Title: {title}
 
 Abstract: {abstract}
-
-Full Paper Text:
-{paper_text[:10000]}  # Limit text length for API
 
 Task: Analyze this research paper and evaluate its relevance to Etsy's business. Consider aspects like:
 - E-commerce applications
@@ -95,17 +53,21 @@ Please provide:
             analysis = response.content[0].text
             
             # Extract components (this is a simple parsing, could be made more robust)
-            lines = analysis.split('\n')
+            sections = analysis.split('\n\n')
             
             # Find relevance score
-            score_line = next(line for line in lines if 'relevance score' in line.lower())
-            relevance_score = int(''.join(filter(str.isdigit, score_line)))
+            score_section = next(s for s in sections if 'relevance score' in s.lower())
+            relevance_score = int(''.join(filter(str.isdigit, score_section.split('/')[0])))
             
-            # Extract sections
-            sections = analysis.split('\n\n')
-            summary = next(s for s in sections if 'summary' in s.lower() or len(s.split()) < 50)
-            findings = next(s for s in sections if 'findings' in s.lower() or 'key points' in s.lower())
-            applications = next(s for s in sections if 'applications' in s.lower() or 'recommendations' in s.lower())
+            # Extract other sections
+            summary_section = next(s for s in sections if 'executive summary' in s.lower())
+            summary = summary_section.split(':', 1)[1].strip() if ':' in summary_section else summary_section
+            
+            findings_section = next(s for s in sections if 'key findings' in s.lower())
+            findings = findings_section.split(':', 1)[1].strip() if ':' in findings_section else findings_section
+            
+            applications_section = next(s for s in sections if 'applications' in s.lower())
+            applications = applications_section.split(':', 1)[1].strip() if ':' in applications_section else applications_section
 
             return {
                 "relevance_score": relevance_score,
@@ -124,31 +86,20 @@ Please provide:
             }
 
     def process_paper(self, paper_data: Dict) -> Dict:
-        """Process a single paper: download, extract text, and analyze."""
+        """Process a single paper: analyze abstract and title."""
         try:
             # Skip if already processed
             if self.db.is_paper_processed(paper_data["arxiv_id"]):
                 logger.info(f"Paper {paper_data['arxiv_id']} already processed")
                 return self.db.get_paper_by_id(paper_data["arxiv_id"])
 
-            # Download PDF
-            pdf_path = self.download_pdf(paper_data["arxiv_id"], paper_data["arxiv_url"])
-            if not pdf_path:
-                raise Exception("Failed to download PDF")
-
-            # Extract text
-            paper_text = self.extract_text(pdf_path)
-            if not paper_text:
-                raise Exception("Failed to extract text from PDF")
-
             # Get Claude's analysis
-            analysis = self.assess_relevance(paper_text, paper_data["title"], paper_data["abstract"])
+            analysis = self.assess_relevance(paper_data["title"], paper_data["abstract"])
 
             # Combine all data
             processed_data = {
                 **paper_data,
-                **analysis,
-                "pdf_path": pdf_path
+                **analysis
             }
 
             # Save to database

@@ -95,9 +95,8 @@ class ArxivMonitor:
 
         # Check if already processed
         if not force and self.db.is_paper_processed(arxiv_id):
-            paper_data = self.db.get_paper_by_id(arxiv_id)
             logger.info(f"Paper {arxiv_id} already processed")
-            return paper_data
+            return self.db.get_paper_by_id(arxiv_id)
 
         # Fetch paper details (simplified as we don't have RSS data)
         paper_data = {

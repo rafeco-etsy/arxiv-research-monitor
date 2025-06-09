@@ -40,7 +40,13 @@ def mock_components():
 @pytest.fixture
 def app(mock_env, mock_components):
     """Create test application instance."""
-    return ArxivMonitor()
+    app = ArxivMonitor()
+    # Replace instance attributes with mocks
+    app.db = mock_components["db"].return_value
+    app.rss_monitor = mock_components["monitor"].return_value
+    app.paper_processor = mock_components["processor"].return_value
+    app.content_distributor = mock_components["distributor"].return_value
+    return app
 
 def test_app_initialization(mock_env, mock_components):
     """Test application initialization."""
@@ -101,6 +107,7 @@ def test_process_single_paper(app, mock_components):
     # Mock component responses
     app.rss_monitor.extract_arxiv_id.return_value = "2301.12345"
     app.paper_processor.process_paper.return_value = mock_paper
+    app.db.is_paper_processed.return_value = False
     
     # Test processing with distribution
     result = app.process_single_paper(
@@ -130,6 +137,7 @@ def test_process_single_paper_no_distribute(app, mock_components):
     
     app.rss_monitor.extract_arxiv_id.return_value = "2301.12345"
     app.paper_processor.process_paper.return_value = mock_paper
+    app.db.is_paper_processed.return_value = False
     
     result = app.process_single_paper(
         "https://arxiv.org/abs/2301.12345",

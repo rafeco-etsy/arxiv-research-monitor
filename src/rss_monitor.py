@@ -24,7 +24,7 @@ class RSSMonitor:
         # Handle both abstract and PDF URLs
         patterns = [
             r"arxiv\.org/abs/([0-9.]+)",
-            r"arxiv\.org/pdf/([0-9.]+)",
+            r"arxiv\.org/pdf/([0-9.]+)\.pdf",  # Updated pattern for PDF URLs
         ]
         
         for pattern in patterns:
@@ -36,24 +36,24 @@ class RSSMonitor:
     def parse_entry(self, entry: Dict) -> Optional[Dict]:
         """Parse a single RSS entry into paper data."""
         try:
-            arxiv_id = self.extract_arxiv_id(entry.link)
+            arxiv_id = self.extract_arxiv_id(entry.get('link', ''))
             if not arxiv_id:
-                logger.warning(f"Could not extract ArXiv ID from {entry.link}")
+                logger.warning(f"Could not extract ArXiv ID from {entry.get('link', '')}")
                 return None
 
             # Extract authors - handle both string and list formats
-            if isinstance(entry.get('authors', []), list):
-                authors = ', '.join(author.name for author in entry.authors)
-            else:
-                authors = entry.get('author', '')
+            authors = entry.get('author', '')
+            if 'authors' in entry:
+                if isinstance(entry['authors'], list):
+                    authors = ', '.join(author.get('name', '') for author in entry['authors'])
 
             return {
                 "arxiv_id": arxiv_id,
-                "title": entry.title,
+                "title": entry.get('title', ''),
                 "authors": authors,
-                "abstract": entry.summary,
-                "arxiv_url": entry.link,
-                "published_date": entry.get('published'),
+                "abstract": entry.get('summary', ''),
+                "arxiv_url": entry.get('link', ''),
+                "published_date": entry.get('published', ''),
             }
         except Exception as e:
             logger.error(f"Error parsing entry: {e}")
