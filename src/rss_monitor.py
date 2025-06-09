@@ -16,6 +16,7 @@ class RSSMonitor:
         self.default_feeds = [
             "http://export.arxiv.org/rss/cs.IR",  # Information Retrieval
             "http://export.arxiv.org/rss/cs.LG",  # Machine Learning
+            "http://export.arxiv.org/rss/cs.AI",  # Artificial Intelligence
             "http://export.arxiv.org/rss/econ.GN"  # General Economics
         ]
 
