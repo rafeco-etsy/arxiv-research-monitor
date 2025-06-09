@@ -42,7 +42,7 @@ Please provide:
                 model="claude-3-sonnet-20240229",
                 max_tokens=1000,
                 temperature=0,
-                system="You are an expert in analyzing research papers for their business relevance to Etsy, the e-commerce marketplace.",
+                system="You are an expert on AI and ML, and your job is to evaluate the relevance of a research paper to Etsy both in terms of business opportunities and technical advances. You are also an expert in the field of e-commerce and marketplace dynamics.",
                 messages=[{
                     "role": "user",
                     "content": context
