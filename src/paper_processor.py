@@ -39,7 +39,7 @@ Please provide:
 
             # Get Claude's analysis
             response = self.anthropic.messages.create(
-                model="claude-3-sonnet-20240229",
+                model="claude-3-haiku-20240307",
                 max_tokens=1000,
                 temperature=0,
                 system="You are an expert on AI and ML, and your job is to evaluate the relevance of a research paper to Etsy both in terms of business opportunities and technical advances. You are also an expert in the field of e-commerce and marketplace dynamics.",
@@ -69,11 +69,15 @@ Please provide:
             applications_section = next(s for s in sections if 'applications' in s.lower())
             applications = applications_section.split(':', 1)[1].strip() if ':' in applications_section else applications_section
 
+            # Get token usage from response
+            token_usage = response.usage.input_tokens + response.usage.output_tokens
+
             return {
                 "relevance_score": relevance_score,
                 "summary": summary,
                 "key_findings": findings,
-                "etsy_applications": applications
+                "etsy_applications": applications,
+                "token_usage": token_usage
             }
 
         except Exception as e:
@@ -82,17 +86,13 @@ Please provide:
                 "relevance_score": 0,
                 "summary": "Error analyzing paper",
                 "key_findings": "Error analyzing paper",
-                "etsy_applications": "Error analyzing paper"
+                "etsy_applications": "Error analyzing paper",
+                "token_usage": 0
             }
 
     def process_paper(self, paper_data: Dict) -> Dict:
         """Process a single paper: analyze abstract and title."""
         try:
-            # Skip if already processed
-            if self.db.is_paper_processed(paper_data["arxiv_id"]):
-                logger.info(f"Paper {paper_data['arxiv_id']} already processed")
-                return self.db.get_paper_by_id(paper_data["arxiv_id"])
-
             # Get Claude's analysis
             analysis = self.assess_relevance(paper_data["title"], paper_data["abstract"])
 
@@ -102,9 +102,8 @@ Please provide:
                 **analysis
             }
 
-            # Save to database
-            self.db.save_paper(processed_data)
-            return processed_data
+            # Save to database and get updated data
+            return self.db.save_paper(processed_data)
 
         except Exception as e:
             logger.error(f"Error processing paper {paper_data.get('arxiv_id')}: {e}")

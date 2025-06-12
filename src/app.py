@@ -2,6 +2,11 @@ import os
 import logging
 from typing import Dict, List, Optional
 from dotenv import load_dotenv
+import feedparser
+import time
+import re
+from datetime import datetime
+from urllib.parse import urlparse, parse_qs
 
 from .db import Database
 from .rss_monitor import RSSMonitor
@@ -98,14 +103,37 @@ class ArxivMonitor:
             logger.info(f"Paper {arxiv_id} already processed")
             return self.db.get_paper_by_id(arxiv_id)
 
-        # Fetch paper details (simplified as we don't have RSS data)
-        paper_data = {
-            "arxiv_id": arxiv_id,
-            "arxiv_url": arxiv_url,
-            "title": "",  # Will be updated by paper processor
-            "authors": "",
-            "abstract": ""
-        }
+        # Add delay before making ArXiv API request
+        time.sleep(3)  # 3 second delay to respect rate limits
+
+        # Fetch paper details from ArXiv RSS feed with retries
+        max_retries = 3
+        base_delay = 3  # seconds
+        feed_url = f"http://export.arxiv.org/api/query?id_list={arxiv_id}"
+        
+        for attempt in range(max_retries):
+            try:
+                time.sleep(base_delay * (2 ** attempt))  # Exponential backoff
+                feed = feedparser.parse(feed_url)
+                
+                if not feed.entries:
+                    logger.error(f"Could not fetch paper details from ArXiv: {arxiv_id}")
+                    continue
+                    
+                entry = feed.entries[0]
+                paper_data = {
+                    "arxiv_id": arxiv_id,
+                    "arxiv_url": arxiv_url,
+                    "title": entry.get('title', '').replace('\n', ' '),
+                    "authors": ', '.join(author.get('name', '') for author in entry.get('authors', [])),
+                    "abstract": entry.get('summary', '').replace('\n', ' ')
+                }
+                break
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1} failed for {arxiv_id}: {e}")
+                if attempt == max_retries - 1:
+                    logger.error(f"Failed to fetch paper details after {max_retries} attempts")
+                    return None
 
         # Process the paper
         processed_paper = self.paper_processor.process_paper(paper_data)
@@ -126,13 +154,17 @@ class ArxivMonitor:
         """Check health status of a specific feed."""
         return self.rss_monitor.check_feed_health(feed_url)
 
-    def get_recent_papers(
-        self,
-        days: int = 7,
-        min_relevance: Optional[int] = None
-    ) -> List[Dict]:
+    def get_recent_papers(self, days: int) -> List[Dict]:
         """Get papers processed in the last N days."""
-        papers = self.db.get_recent_papers(days)
-        if min_relevance is not None:
-            papers = [p for p in papers if p["relevance_score"] >= min_relevance]
-        return papers 
+        with self.db._get_connection() as conn:
+            cursor = conn.execute("""
+                SELECT p.*, f.feed_url
+                FROM processed_papers p
+                LEFT JOIN (
+                    SELECT DISTINCT arxiv_id, feed_url
+                    FROM feed_paper_mapping
+                ) f ON p.arxiv_id = f.arxiv_id
+                WHERE p.processed_date >= datetime('now', ?)
+                ORDER BY p.processed_date DESC
+            """, (f"-{days} days",))
+            return [dict(row) for row in cursor.fetchall()] 
